@@ -74,6 +74,21 @@ def get_all_reserves():
     conn.close()
     return rows
 
+def get_all_reserves_with_id():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, target, amount FROM reserves")
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def delete_reserve_by_id(reserve_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM reserves WHERE id = ?", (reserve_id,))
+    conn.commit()
+    conn.close()
+
 def execute_reserve(target):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
