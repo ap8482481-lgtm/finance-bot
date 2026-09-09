@@ -58,7 +58,7 @@ def days_until_next_payment() -> int:
     delta = (target_date - today).days
     return delta if delta > 0 else 1
 
-# --- ДИЗАЙНЕРСКИЕ МЕНЮ ---
+# --- МЕНЮ ---
 def get_main_menu():
     builder = InlineKeyboardBuilder()
     builder.button(text="📊 Сводка и Лимит", callback_data="summary")
@@ -138,23 +138,34 @@ async def show_reserves(callback: CallbackQuery):
 async def show_pay_menu(callback: CallbackQuery):
     await callback.message.edit_text("✅ <b>Какой платеж проводим из отложенных?</b>", reply_markup=get_pay_menu(), parse_mode="HTML")
 
-# --- ПРОСМОТР АКТИВНЫХ РЕЗЕРВОВ ---
+# --- ПРОСМОТР И УДАЛЕНИЕ АКТИВНЫХ РЕЗЕРВОВ ---
 @dp.callback_query(F.data == "view_reserves")
 async def view_active_reserves(callback: CallbackQuery):
-    reserves = db.get_all_reserves()
+    reserves = db.get_all_reserves_with_id()
     total = db.get_total_reserve()
     
     text = "📋 <b>Активные отложенные платежи:</b>\n━━━━━━━━━━━━━━━━━━━\n"
+    builder = InlineKeyboardBuilder()
+    
     if not reserves:
         text += "<i>На данный момент ничего не отложено.</i>"
     else:
-        for target, amount in reserves:
+        for r_id, target, amount in reserves:
             text += f"• <b>{target.title()}</b>: <code>{amount:,.0f} ₽</code>\n"
+            builder.button(text=f"🗑 Удалить: {target.title()} ({amount:,.0f}₽)", callback_data=f"del_res_{r_id}")
         text += f"\n🧊 <b>Всего заморожено:</b> <code>{total:,.0f} ₽</code>"
         
-    builder = InlineKeyboardBuilder()
     builder.button(text="◀️ Назад к резервам", callback_data="manage_reserves")
+    builder.adjust(1)
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+@dp.callback_query(F.data.startswith("del_res_"))
+async def delete_reserve_callback(callback: CallbackQuery):
+    r_id = int(callback.data.split("_")[2])
+    db.delete_reserve_by_id(r_id)
+    await callback.answer("🗑 Резерв успешно удален!", show_alert=False)
+    # Обновляем список отложенных платежей в сообщении
+    await view_active_reserves(callback)
 
 # --- ВНЕСЕНИЕ РАСХОДА ---
 @dp.callback_query(F.data.startswith("cat_"))
