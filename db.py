@@ -66,6 +66,14 @@ def get_total_reserve():
     conn.close()
     return res if res else 0.0
 
+def get_all_reserves():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT target, amount FROM reserves")
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
 def execute_reserve(target):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -73,7 +81,6 @@ def execute_reserve(target):
     conn.commit()
     conn.close()
 
-# Новые функции для истории и аналитики
 def get_recent_transactions(limit=5):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
