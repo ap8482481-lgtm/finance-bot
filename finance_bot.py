@@ -202,7 +202,7 @@ async def show_history(callback: CallbackQuery):
     else:
         for t_type, cat, amt, date_time in transactions:
             sign = "➕" if t_type == "income" else "📉"
-            text += f"{sign} <b>{amt:,.0f} ₽</b> | {cat} <dim>({date_time[5:16]})\n</dim>"
+            text += f"{sign} <b>{amt:,.0f} ₽</b> | {cat} <i>({date_time[5:16]})</i>\n"
             
     await callback.message.edit_text(text, reply_markup=get_history_menu(), parse_mode="HTML")
 
