@@ -1,8 +1,10 @@
 import sqlite3
-from datetime import datetime
+import os
+
+DB_PATH = os.path.join(os.getenv("DATA_DIR", "."), "finance.db")
 
 def init_db():
-    conn = sqlite3.connect('budget.db')
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
@@ -10,78 +12,93 @@ def init_db():
             type TEXT,
             category TEXT,
             amount REAL,
-            date TEXT
+            date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS reserves (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target TEXT,
+            amount REAL
         )
     ''')
     conn.commit()
     conn.close()
 
-def add_transaction(t_type: str, category: str, amount: float):
-    conn = sqlite3.connect('budget.db')
+def add_transaction(t_type, category, amount):
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    date_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cursor.execute(
-        "INSERT INTO transactions (type, category, amount, date) VALUES (?, ?, ?, ?)",
-        (t_type, category, amount, date_now)
-    )
+    cursor.execute("INSERT INTO transactions (type, category, amount) VALUES (?, ?, ?)", (t_type, category, amount))
     conn.commit()
     conn.close()
 
-def get_total_expenses() -> float:
-    conn = sqlite3.connect('budget.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT SUM(amount) FROM transactions WHERE type='expense'")
-    res = cursor.fetchone()[0]
-    conn.close()
-    return res if res else 0.0
+def add_income(amount):
+    add_transaction("income", "💰 Доход", amount)
 
-def add_income(amount: float):
-    conn = sqlite3.connect('budget.db')
-    cursor = conn.cursor()
-    date_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cursor.execute(
-        "INSERT INTO transactions (type, category, amount, date) VALUES (?, ?, ?, ?)",
-        ("income", "Пополнение", amount, date_now)
-    )
-    conn.commit()
-    conn.close()
-
-def get_total_income() -> float:
-    conn = sqlite3.connect('budget.db')
+def get_total_income():
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT SUM(amount) FROM transactions WHERE type='income'")
     res = cursor.fetchone()[0]
     conn.close()
     return res if res else 0.0
 
-def add_reserve(amount: float, name: str):
-    conn = sqlite3.connect('budget.db')
+def get_total_expenses():
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    date_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cursor.execute(
-        "INSERT INTO transactions (type, category, amount, date) VALUES (?, ?, ?, ?)",
-        ("reserve", name, amount, date_now)
-    )
-    conn.commit()
-    conn.close()
-
-def get_total_reserve() -> float:
-    conn = sqlite3.connect('budget.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT SUM(amount) FROM transactions WHERE type='reserve'")
+    cursor.execute("SELECT SUM(amount) FROM transactions WHERE type='expense'")
     res = cursor.fetchone()[0]
     conn.close()
     return res if res else 0.0
 
-def execute_reserve(name: str):
-    conn = sqlite3.connect('budget.db')
+def add_reserve(amount, target):
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT amount FROM transactions WHERE type='reserve' AND category=? ORDER BY id DESC LIMIT 1", (name,))
-    result = cursor.fetchone()
-    if result:
-        amount = result[0]
-        date_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        cursor.execute("INSERT INTO transactions (type, category, amount, date) VALUES (?, ?, ?, ?)", ("expense", f"Платеж: {name}", amount, date_now))
-        cursor.execute("INSERT INTO transactions (type, category, amount, date) VALUES (?, ?, ?, ?)", ("reserve", f"Оплачено: {name}", -amount, date_now))
-        conn.commit()
+    cursor.execute("INSERT INTO reserves (target, amount) VALUES (?, ?)", (target, amount))
+    conn.commit()
     conn.close()
+
+def get_total_reserve():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT SUM(amount) FROM reserves")
+    res = cursor.fetchone()[0]
+    conn.close()
+    return res if res else 0.0
+
+def execute_reserve(target):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM reserves WHERE target = ?", (target,))
+    conn.commit()
+    conn.close()
+
+# Новые функции для истории и аналитики
+def get_recent_transactions(limit=5):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT type, category, amount, date FROM transactions ORDER BY id DESC LIMIT ?", (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def delete_last_transaction():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, type, category, amount FROM transactions ORDER BY id DESC LIMIT 1")
+    last = cursor.fetchone()
+    if last:
+        cursor.execute("DELETE FROM transactions WHERE id = ?", (last[0],))
+        conn.commit()
+        conn.close()
+        return last
+    conn.close()
+    return None
+
+def get_expenses_by_category():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT category, SUM(amount) FROM transactions WHERE type='expense' GROUP BY category")
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
