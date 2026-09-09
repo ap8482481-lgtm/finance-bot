@@ -14,7 +14,9 @@ import db
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-MY_USER_ID = int(os.getenv("MY_USER_ID", "0"))
+# Безопасное чтение MY_USER_ID, чтобы не было падений, если переменная пустая
+raw_user_id = os.getenv("MY_USER_ID")
+MY_USER_ID = int(raw_user_id) if raw_user_id and raw_user_id.isdigit() else 0
 
 PAYMENT_DATES = [10, 25]  # Дни выплаты зарплаты и аванса
 
@@ -96,7 +98,8 @@ def get_pay_menu():
 # --- ОБРАБОТЧИКИ НАВИГАЦИИ ---
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
-    if not is_owner(message.from_user.id): return
+    if not is_owner(message.from_user.id):
+        return
     await message.answer("Фин-центр активен. Что сделаем?", reply_markup=get_main_menu())
 
 @dp.callback_query(F.data == "back_to_main")
@@ -205,7 +208,10 @@ async def process_summary(callback: CallbackQuery):
     await callback.message.edit_text(summary_text, reply_markup=get_main_menu(), parse_mode="HTML")
 
 async def main():
-    print("Приватный финансовый бот запущен...")
+    print("--- ДИАГНОСТИКА ЗАПУСКА ---")
+    print(f"BOT_TOKEN загружен: {'Да (первые символы: ' + BOT_TOKEN[:5] + '...)' if BOT_TOKEN else 'НЕТ (пусто!)'}")
+    print(f"MY_USER_ID загружен: {MY_USER_ID if MY_USER_ID != 0 else 'НЕТ ИЛИ ОШИБКА (равен 0)'}")
+    print("Приватный финансовый бот запущен и слушает Telegram...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
