@@ -22,7 +22,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 db.init_db()
 
-# Полный список категорий с отдельными продуктами питания
+# Полный список категорий расходов
 EXPENSE_CATEGORIES = {
     "cat_food": "🥗 Продукты питания",
     "cat_house": "🛒 Бытовые нужды",
@@ -82,7 +82,7 @@ def get_reserves_menu():
     builder = InlineKeyboardBuilder()
     builder.button(text="🏦 Ипотека", callback_data="reserve_ипотека")
     builder.button(text="💳 Кредитки", callback_data="reserve_кредитки")
-    builder.button(text="🧸 Садик", callback_data="reserve_садик")
+    builder.button(text="🎒 Школа", callback_data="reserve_школа")
     builder.button(text="🌐 Интернет", callback_data="reserve_интернет")
     builder.button(text="📱 Связь", callback_data="reserve_связь")
     builder.button(text="✅ Оплатить из отложенного", callback_data="pay_menu")
@@ -94,7 +94,7 @@ def get_pay_menu():
     builder = InlineKeyboardBuilder()
     builder.button(text="🏦 Ипотеку", callback_data="pay_ипотека")
     builder.button(text="💳 Кредитки", callback_data="pay_кредитки")
-    builder.button(text="🧸 Садик", callback_data="pay_садик")
+    builder.button(text="🎒 Школу", callback_data="pay_школа")
     builder.button(text="🌐 Интернет", callback_data="pay_интернет")
     builder.button(text="📱 Связь", callback_data="pay_связь")
     builder.button(text="⬅️ Назад", callback_data="manage_reserves")
