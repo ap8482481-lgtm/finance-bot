@@ -10,11 +10,10 @@ from datetime import datetime, date
 from dotenv import load_dotenv
 import db
 
-# Загружаем переменные окружения (для локального теста читает файл .env)
+# Загружаем переменные окружения
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-# Безопасное чтение MY_USER_ID, чтобы не было падений, если переменная пустая
 raw_user_id = os.getenv("MY_USER_ID")
 MY_USER_ID = int(raw_user_id) if raw_user_id and raw_user_id.isdigit() else 0
 
@@ -24,13 +23,18 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 db.init_db()
 
+# Полный список категорий расходов (можно легко дополнять или изменять)
 EXPENSE_CATEGORIES = {
     "cat_auto": "🚗 Автомобиль",
-    "cat_house": "🛒 Бытовые нужды",
+    "cat_house": "🛒 Бытовые нужды / Продукты",
     "cat_habits": "🚬 Вредные привычки",
     "cat_health": "💊 Гигиена и здоровье",
     "cat_kids": "🧸 Дети",
-    "cat_clothes": "👕 Одежда и косметика"
+    "cat_clothes": "👕 Одежда и косметика",
+    "cat_communal": "🏠 КУ и ЖКХ",
+    "cat_transport": "🚌 Общественный транспорт",
+    "cat_cafe": "☕ Кафе и рестораны",
+    "cat_other": "📦 Разное / Прочее"
 }
 
 class ExpenseState(StatesGroup): waiting_for_amount = State()
@@ -69,7 +73,7 @@ def get_expenses_menu():
     for code, name in EXPENSE_CATEGORIES.items():
         builder.button(text=name, callback_data=code)
     builder.button(text="⬅️ Назад", callback_data="back_to_main")
-    builder.adjust(2, 2, 2, 1)
+    builder.adjust(2, 2, 2, 2, 2)
     return builder.as_markup()
 
 def get_reserves_menu():
@@ -109,7 +113,7 @@ async def go_back(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data == "show_expenses")
 async def show_expenses(callback: CallbackQuery):
-    await callback.message.edit_text("Выберите категорию:", reply_markup=get_expenses_menu())
+    await callback.message.edit_text("Выберите категорию расхода:", reply_markup=get_expenses_menu())
 
 @dp.callback_query(F.data == "manage_reserves")
 async def show_reserves(callback: CallbackQuery):
@@ -119,13 +123,13 @@ async def show_reserves(callback: CallbackQuery):
 async def show_pay_menu(callback: CallbackQuery):
     await callback.message.edit_text("Что именно сейчас оплачиваем из резерва?", reply_markup=get_pay_menu())
 
-# --- ВНЕСЕНИЕ РАСХОДА ---
+# --- ВНЕСЕНИЕ РАСХОДА (Вручную) ---
 @dp.callback_query(F.data.startswith("cat_"))
 async def process_cat_btn(callback: CallbackQuery, state: FSMContext):
     category_name = EXPENSE_CATEGORIES[callback.data]
     await state.update_data(category=category_name)
     await state.set_state(ExpenseState.waiting_for_amount)
-    await callback.message.edit_text(f"Сумма расхода для <b>{category_name}</b>:", parse_mode="HTML")
+    await callback.message.edit_text(f"Введите сумму расхода для <b>{category_name}</b>:", parse_mode="HTML")
 
 @dp.message(ExpenseState.waiting_for_amount)
 async def process_expense_amount(message: Message, state: FSMContext):
@@ -136,13 +140,13 @@ async def process_expense_amount(message: Message, state: FSMContext):
         await message.answer(f"✅ Учтено: <b>{amount:,.0f} ₽</b> в '{data['category']}'", reply_markup=get_main_menu(), parse_mode="HTML")
         await state.clear()
     except ValueError:
-        await message.answer("Введите число.")
+        await message.answer("Пожалуйста, введите корректное число (например: 350 или 1200.50).")
 
-# --- ВНЕСЕНИЕ ДОХОДА ---
+# --- ВНЕСЕНИЕ ДОХОДА (Вручную) ---
 @dp.callback_query(F.data == "add_income")
 async def process_income_btn(callback: CallbackQuery, state: FSMContext):
     await state.set_state(IncomeState.waiting_for_amount)
-    await callback.message.edit_text("Введите сумму дохода:")
+    await callback.message.edit_text("Введите сумму полученного дохода:")
 
 @dp.message(IncomeState.waiting_for_amount)
 async def process_income_amount(message: Message, state: FSMContext):
@@ -152,18 +156,15 @@ async def process_income_amount(message: Message, state: FSMContext):
         await message.answer(f"✅ Доход <b>{amount:,.0f} ₽</b> записан!", reply_markup=get_main_menu(), parse_mode="HTML")
         await state.clear()
     except ValueError:
-        await message.answer("Введите число.")
+        await message.answer("Пожалуйста, введите число.")
 
-# --- РЕЗЕРВЫ ---
+# --- РЕЗЕРВЫ (Вручную) ---
 @dp.callback_query(F.data.startswith("reserve_"))
 async def process_reserve_btn(callback: CallbackQuery, state: FSMContext):
     target = callback.data.split("_")[1]
-    defaults = {"ипотека": 10350, "кредитки": 9200, "садик": 3000, "интернет": 700, "связь": 1300}
-    default_amount = defaults.get(target, 0)
-    
     await state.update_data(reserve_target=target)
     await state.set_state(ReserveState.waiting_for_amount)
-    await callback.message.edit_text(f"Сумма для заморозки на <b>{target.title()}</b>:\n(Обычно это {default_amount} ₽)", parse_mode="HTML")
+    await callback.message.edit_text(f"Введите сумму для заморозки на <b>{target.title()}</b>:", parse_mode="HTML")
 
 @dp.message(ReserveState.waiting_for_amount)
 async def process_reserve_amount(message: Message, state: FSMContext):
@@ -174,13 +175,13 @@ async def process_reserve_amount(message: Message, state: FSMContext):
         await message.answer(f"🧊 <b>{amount:,.0f} ₽</b> заморожено на '{data['reserve_target'].title()}'.", reply_markup=get_main_menu(), parse_mode="HTML")
         await state.clear()
     except ValueError:
-        await message.answer("Введите число.")
+        await message.answer("Пожалуйста, введите число.")
 
 @dp.callback_query(F.data.startswith("pay_"))
 async def process_pay_reserve(callback: CallbackQuery):
     target = callback.data.split("_")[1]
     db.execute_reserve(target)
-    await callback.message.edit_text(f"✅ Платеж '{target.title()}' проведен из замороженных средств!", reply_markup=get_main_menu())
+    await callback.message.edit_text(f"✅ Платеж '{target.title()}' успешно проведен из замороженных средств!", reply_markup=get_main_menu())
 
 # --- СВОДКА И ЛИМИТ ---
 @dp.callback_query(F.data == "summary")
@@ -208,10 +209,9 @@ async def process_summary(callback: CallbackQuery):
     await callback.message.edit_text(summary_text, reply_markup=get_main_menu(), parse_mode="HTML")
 
 async def main():
-    print("--- ДИАГНОСТИКА ЗАПУСКА ---")
-    print(f"BOT_TOKEN загружен: {'Да (первые символы: ' + BOT_TOKEN[:5] + '...)' if BOT_TOKEN else 'НЕТ (пусто!)'}")
-    print(f"MY_USER_ID загружен: {MY_USER_ID if MY_USER_ID != 0 else 'НЕТ ИЛИ ОШИБКА (равен 0)'}")
-    print("Приватный финансовый бот запущен и слушает Telegram...")
+    print(f"BOT_TOKEN загружен: {'Да' if BOT_TOKEN else 'НЕТ'}")
+    print(f"MY_USER_ID загружен: {MY_USER_ID}")
+    print("Бот запущен и готов к работе...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
