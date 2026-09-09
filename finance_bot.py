@@ -6,11 +6,10 @@ from aiogram.filters import CommandStart
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from datetime import datetime, date
+from datetime import date
 from dotenv import load_dotenv
 import db
 
-# Загружаем переменные окружения
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -23,10 +22,11 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 db.init_db()
 
-# Полный список категорий расходов (можно легко дополнять или изменять)
+# Полный список категорий с отдельными продуктами питания
 EXPENSE_CATEGORIES = {
+    "cat_food": "🥗 Продукты питания",
+    "cat_house": "🛒 Бытовые нужды",
     "cat_auto": "🚗 Автомобиль",
-    "cat_house": "🛒 Бытовые нужды / Продукты",
     "cat_habits": "🚬 Вредные привычки",
     "cat_health": "💊 Гигиена и здоровье",
     "cat_kids": "🧸 Дети",
@@ -65,7 +65,9 @@ def get_main_menu():
     builder.button(text="💳 Записать расход", callback_data="show_expenses")
     builder.button(text="💰 Внести доход", callback_data="add_income")
     builder.button(text="🧊 Отложить на платежи", callback_data="manage_reserves")
-    builder.adjust(1, 1, 2)
+    builder.button(text="📜 История и Отмена", callback_data="history_menu")
+    builder.button(text="📈 Месячный отчет", callback_data="monthly_report")
+    builder.adjust(1, 1, 2, 2)
     return builder.as_markup()
 
 def get_expenses_menu():
@@ -73,7 +75,7 @@ def get_expenses_menu():
     for code, name in EXPENSE_CATEGORIES.items():
         builder.button(text=name, callback_data=code)
     builder.button(text="⬅️ Назад", callback_data="back_to_main")
-    builder.adjust(2, 2, 2, 2, 2)
+    builder.adjust(2, 2, 2, 2, 2, 1)
     return builder.as_markup()
 
 def get_reserves_menu():
@@ -97,6 +99,13 @@ def get_pay_menu():
     builder.button(text="📱 Связь", callback_data="pay_связь")
     builder.button(text="⬅️ Назад", callback_data="manage_reserves")
     builder.adjust(2, 2, 1, 1)
+    return builder.as_markup()
+
+def get_history_menu():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="❌ Отменить последнюю операцию", callback_data="cancel_last")
+    builder.button(text="⬅️ Назад", callback_data="back_to_main")
+    builder.adjust(1, 1)
     return builder.as_markup()
 
 # --- ОБРАБОТЧИКИ НАВИГАЦИИ ---
@@ -183,6 +192,47 @@ async def process_pay_reserve(callback: CallbackQuery):
     db.execute_reserve(target)
     await callback.message.edit_text(f"✅ Платеж '{target.title()}' успешно проведен из замороженных средств!", reply_markup=get_main_menu())
 
+# --- ИСТОРИЯ И ОТМЕНА ---
+@dp.callback_query(F.data == "history_menu")
+async def show_history(callback: CallbackQuery):
+    transactions = db.get_recent_transactions(5)
+    text = "📜 <b>Последние операции:</b>\n\n"
+    if not transactions:
+        text += "<i>Пока нет ни одной записи.</i>"
+    else:
+        for t_type, cat, amt, date_time in transactions:
+            sign = "➕" if t_type == "income" else "📉"
+            text += f"{sign} <b>{amt:,.0f} ₽</b> | {cat} <dim>({date_time[5:16]})\n</dim>"
+            
+    await callback.message.edit_text(text, reply_markup=get_history_menu(), parse_mode="HTML")
+
+@dp.callback_query(F.data == "cancel_last")
+async def cancel_last_transaction(callback: CallbackQuery):
+    last = db.delete_last_transaction()
+    if last:
+        t_type, cat, amt = last[1], last[2], last[3]
+        text = f"❌ <b>Операция отменена и удалена:</b>\n{cat} — {amt:,.0f} ₽"
+    else:
+        text = "⚠️ История пуста, нечего отменять."
+    await callback.message.edit_text(text, reply_markup=get_main_menu(), parse_mode="HTML")
+
+# --- МЕСЯЧНЫЙ ОТЧЕТ (АНАЛИТИКА) ---
+@dp.callback_query(F.data == "monthly_report")
+async def show_monthly_report(callback: CallbackQuery):
+    expenses = db.get_expenses_by_category()
+    total_expense = db.get_total_expenses()
+    
+    text = "📈 <b>Аналитика расходов по категориям:</b>\n\n"
+    if not expenses or total_expense == 0:
+        text += "<i>Расходов пока не зафиксировано.</i>"
+    else:
+        for cat, amt in expenses:
+            percent = (amt / total_expense) * 100
+            text += f"• <b>{cat}</b>: {amt:,.0f} ₽ <i>({percent:.1f}%)</i>\n"
+        text += f"\n📉 <b>Всего потрачено:</b> {total_expense:,.0f} ₽"
+        
+    await callback.message.edit_text(text, reply_markup=get_main_menu(), parse_mode="HTML")
+
 # --- СВОДКА И ЛИМИТ ---
 @dp.callback_query(F.data == "summary")
 async def process_summary(callback: CallbackQuery):
@@ -209,9 +259,7 @@ async def process_summary(callback: CallbackQuery):
     await callback.message.edit_text(summary_text, reply_markup=get_main_menu(), parse_mode="HTML")
 
 async def main():
-    print(f"BOT_TOKEN загружен: {'Да' if BOT_TOKEN else 'НЕТ'}")
-    print(f"MY_USER_ID загружен: {MY_USER_ID}")
-    print("Бот запущен и готов к работе...")
+    print("Бот успешно запущен и работает...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
