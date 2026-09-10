@@ -92,9 +92,22 @@ def delete_reserve_by_id(reserve_id):
 def execute_reserve(target):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM reserves WHERE target = ?", (target,))
+    
+    # 1. Получаем сумму, которая была отложена на эту цель
+    cursor.execute("SELECT SUM(amount) FROM reserves WHERE target = ?", (target,))
+    amount = cursor.fetchone()[0]
+    
+    if amount:
+        # 2. Превращаем замороженные деньги в реальный расход
+        cat_name = f"✅ Оплата резерва: {target.title()}"
+        cursor.execute("INSERT INTO transactions (type, category, amount) VALUES (?, ?, ?)", ("expense", cat_name, amount))
+        
+        # 3. Удаляем из списка резервов
+        cursor.execute("DELETE FROM reserves WHERE target = ?", (target,))
+        
     conn.commit()
     conn.close()
+    return amount
 
 def get_recent_transactions(limit=5):
     conn = sqlite3.connect(DB_PATH)
