@@ -22,7 +22,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 db.init_db()
 
-# Категории расходов
+# Категории расходов (расширены)
 EXPENSE_CATEGORIES = {
     "cat_food": "🥗 Продукты питания",
     "cat_house": "🛒 Бытовые нужды",
@@ -34,6 +34,8 @@ EXPENSE_CATEGORIES = {
     "cat_communal": "🏠 КУ и ЖКХ",
     "cat_transport": "🚌 Общественный транспорт",
     "cat_cafe": "☕ Кафе и рестораны",
+    "cat_invest": "📈 Инвестиции",
+    "cat_deposit": "🐖 Вклад",
     "cat_other": "📦 Разное / Прочее"
 }
 
@@ -58,7 +60,7 @@ def days_until_next_payment() -> int:
     delta = (target_date - today).days
     return delta if delta > 0 else 1
 
-# --- МЕНЮ ---
+# --- ДИЗАЙНЕРСКИЕ МЕНЮ ---
 def get_main_menu():
     builder = InlineKeyboardBuilder()
     builder.button(text="📊 Сводка и Лимит", callback_data="summary")
@@ -75,7 +77,8 @@ def get_expenses_menu():
     for code, name in EXPENSE_CATEGORIES.items():
         builder.button(text=name, callback_data=code)
     builder.button(text="◀️ Назад в меню", callback_data="back_to_main")
-    builder.adjust(2, 2, 2, 2, 2, 1)
+    # У нас 13 категорий + 1 кнопка назад (итого 14 кнопок)
+    builder.adjust(2, 2, 2, 2, 2, 2, 1, 1)
     return builder.as_markup()
 
 def get_reserves_menu():
@@ -163,8 +166,7 @@ async def view_active_reserves(callback: CallbackQuery):
 async def delete_reserve_callback(callback: CallbackQuery):
     r_id = int(callback.data.split("_")[2])
     db.delete_reserve_by_id(r_id)
-    await callback.answer("🗑 Резерв успешно удален!", show_alert=False)
-    # Обновляем список отложенных платежей в сообщении
+    await callback.answer("🗑 Резерв успешно отменен! Сумма вернулась в баланс.", show_alert=False)
     await view_active_reserves(callback)
 
 # --- ВНЕСЕНИЕ РАСХОДА ---
@@ -244,13 +246,22 @@ async def process_reserve_amount(message: Message, state: FSMContext):
 @dp.callback_query(F.data.startswith("pay_"))
 async def process_pay_reserve(callback: CallbackQuery):
     target = callback.data.split("_")[1]
-    db.execute_reserve(target)
+    amount = db.execute_reserve(target)
     
-    success_text = (
-        f"✅ <b>Платеж проведен!</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
-        f"🎯 Цель <b>'{target.title()}'</b> успешно оплачена из замороженных средств."
-    )
+    if amount:
+        success_text = (
+            f"✅ <b>Платеж проведен!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"🎯 Оплачено: <b>{target.title()}</b>\n"
+            f"💸 Списано с баланса: <b>{amount:,.0f} ₽</b>"
+        )
+    else:
+        success_text = (
+            f"⚠️ <b>Резерв пуст</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"На цель <b>'{target.title()}'</b> ничего не отложено."
+        )
+        
     await callback.message.edit_text(success_text, reply_markup=get_main_menu(), parse_mode="HTML")
 
 # --- ИСТОРИЯ И ОТМЕНА ---
