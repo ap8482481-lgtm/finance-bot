@@ -15,6 +15,13 @@ def init_db():
             date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    
+    # Безопасное добавление новой колонки для комментариев (если её еще нет в старой базе)
+    try:
+        cursor.execute("ALTER TABLE transactions ADD COLUMN note TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass # Колонка уже существует
+        
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS reserves (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,15 +32,12 @@ def init_db():
     conn.commit()
     conn.close()
 
-def add_transaction(t_type, category, amount):
+def add_transaction(t_type, category, amount, note=""):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO transactions (type, category, amount) VALUES (?, ?, ?)", (t_type, category, amount))
+    cursor.execute("INSERT INTO transactions (type, category, amount, note) VALUES (?, ?, ?, ?)", (t_type, category, amount, note))
     conn.commit()
     conn.close()
-
-def add_income(amount):
-    add_transaction("income", "💰 Доход", amount)
 
 def get_total_income():
     conn = sqlite3.connect(DB_PATH)
@@ -66,14 +70,6 @@ def get_total_reserve():
     conn.close()
     return res if res else 0.0
 
-def get_all_reserves():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT target, amount FROM reserves")
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
-
 def get_all_reserves_with_id():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -93,16 +89,12 @@ def execute_reserve(target):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # 1. Получаем сумму, которая была отложена на эту цель
     cursor.execute("SELECT SUM(amount) FROM reserves WHERE target = ?", (target,))
     amount = cursor.fetchone()[0]
     
     if amount:
-        # 2. Превращаем замороженные деньги в реальный расход
         cat_name = f"✅ Оплата резерва: {target.title()}"
-        cursor.execute("INSERT INTO transactions (type, category, amount) VALUES (?, ?, ?)", ("expense", cat_name, amount))
-        
-        # 3. Удаляем из списка резервов
+        cursor.execute("INSERT INTO transactions (type, category, amount, note) VALUES (?, ?, ?, ?)", ("expense", cat_name, amount, ""))
         cursor.execute("DELETE FROM reserves WHERE target = ?", (target,))
         
     conn.commit()
@@ -112,7 +104,7 @@ def execute_reserve(target):
 def get_recent_transactions(limit=5):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT type, category, amount, date FROM transactions ORDER BY id DESC LIMIT ?", (limit,))
+    cursor.execute("SELECT type, category, amount, date, note FROM transactions ORDER BY id DESC LIMIT ?", (limit,))
     rows = cursor.fetchall()
     conn.close()
     return rows
