@@ -22,7 +22,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 db.init_db()
 
-# Расширенный список категорий расходов (без "Разное / Прочее")
+# Категории расходов
 EXPENSE_CATEGORIES = {
     "cat_food": "🥗 Продукты питания",
     "cat_house": "🛒 Бытовые нужды",
@@ -39,6 +39,16 @@ EXPENSE_CATEGORIES = {
     "cat_habits": "🚬 Вредные привычки",
     "cat_invest": "📈 Инвестиции",
     "cat_deposit": "🐖 Вклад"
+}
+
+# Новые категории доходов
+INCOME_CATEGORIES = {
+    "inc_salary": "💼 Зарплата",
+    "inc_advance": "💵 Аванс",
+    "inc_cashback": "💳 Кэшбэк",
+    "inc_gift": "🎁 Подарки",
+    "inc_percent": "📈 Проценты",
+    "inc_other": "💰 Прочие доходы"
 }
 
 class ExpenseState(StatesGroup): waiting_for_amount = State()
@@ -79,8 +89,15 @@ def get_expenses_menu():
     for code, name in EXPENSE_CATEGORIES.items():
         builder.button(text=name, callback_data=code)
     builder.button(text="◀️ Назад в меню", callback_data="back_to_main")
-    # 15 категорий + 1 кнопка назад. 7 рядов по 2 кнопки, 1 кнопка по центру, и 1 кнопка "Назад"
     builder.adjust(2, 2, 2, 2, 2, 2, 2, 1, 1)
+    return builder.as_markup()
+
+def get_incomes_menu():
+    builder = InlineKeyboardBuilder()
+    for code, name in INCOME_CATEGORIES.items():
+        builder.button(text=name, callback_data=code)
+    builder.button(text="◀️ Назад в меню", callback_data="back_to_main")
+    builder.adjust(2, 2, 2, 1)
     return builder.as_markup()
 
 def get_reserves_menu():
@@ -171,53 +188,69 @@ async def delete_reserve_callback(callback: CallbackQuery):
     await callback.answer("🗑 Резерв успешно отменен! Сумма вернулась в баланс.", show_alert=False)
     await view_active_reserves(callback)
 
-# --- ВНЕСЕНИЕ РАСХОДА ---
+# --- ВНЕСЕНИЕ РАСХОДА (С КОММЕНТАРИЯМИ) ---
 @dp.callback_query(F.data.startswith("cat_"))
 async def process_cat_btn(callback: CallbackQuery, state: FSMContext):
     category_name = EXPENSE_CATEGORIES[callback.data]
     await state.update_data(category=category_name)
     await state.set_state(ExpenseState.waiting_for_amount)
-    await callback.message.edit_text(f"✍️ Введите сумму расхода для категории:\n👉 <b>{category_name}</b>", parse_mode="HTML")
+    await callback.message.edit_text(f"✍️ <b>{category_name}</b>\n\nВведите сумму (можно добавить комментарий через пробел, например:\n<code>1500 Вкусвилл</code>):", parse_mode="HTML")
 
 @dp.message(ExpenseState.waiting_for_amount)
 async def process_expense_amount(message: Message, state: FSMContext):
     try:
-        amount = float(message.text.replace(",", "."))
-        data = await state.get_data()
-        db.add_transaction("expense", data['category'], amount)
+        parts = message.text.split(maxsplit=1)
+        amount = float(parts[0].replace(",", "."))
+        note = parts[1] if len(parts) > 1 else ""
         
+        data = await state.get_data()
+        db.add_transaction("expense", data['category'], amount, note)
+        
+        note_display = f"\n📝 Примечание: <i>{note}</i>" if note else ""
         success_text = (
             f"✅ <b>Расход успешно учтен!</b>\n"
             f"━━━━━━━━━━━━━━━━━━━\n"
             f"📂 Категория: {data['category']}\n"
-            f"📉 Сумма: <b>{amount:,.0f} ₽</b>"
+            f"📉 Сумма: <b>{amount:,.0f} ₽</b>{note_display}"
         )
         await message.answer(success_text, reply_markup=get_main_menu(), parse_mode="HTML")
         await state.clear()
     except ValueError:
-        await message.answer("⚠️ Пожалуйста, введите корректное число (например: <code>350</code> или <code>1200.50</code>).", parse_mode="HTML")
+        await message.answer("⚠️ Пожалуйста, начните сообщение с числа (например: <code>1500 такси</code>).", parse_mode="HTML")
 
-# --- ВНЕСЕНИЕ ДОХОДА ---
+# --- ВНЕСЕНИЕ ДОХОДА (С КАТЕГОРИЯМИ И КОММЕНТАРИЯМИ) ---
 @dp.callback_query(F.data == "add_income")
-async def process_income_btn(callback: CallbackQuery, state: FSMContext):
+async def show_incomes(callback: CallbackQuery):
+    await callback.message.edit_text("💰 <b>Выберите категорию дохода:</b>", reply_markup=get_incomes_menu(), parse_mode="HTML")
+
+@dp.callback_query(F.data.startswith("inc_"))
+async def process_inc_btn(callback: CallbackQuery, state: FSMContext):
+    category_name = INCOME_CATEGORIES[callback.data]
+    await state.update_data(category=category_name)
     await state.set_state(IncomeState.waiting_for_amount)
-    await callback.message.edit_text("💰 Введите сумму полученного дохода:", parse_mode="HTML")
+    await callback.message.edit_text(f"✍️ <b>{category_name}</b>\n\nВведите сумму (можно добавить комментарий через пробел, например:\n<code>50000 премия за проект</code>):", parse_mode="HTML")
 
 @dp.message(IncomeState.waiting_for_amount)
 async def process_income_amount(message: Message, state: FSMContext):
     try:
-        amount = float(message.text.replace(",", "."))
-        db.add_income(amount)
+        parts = message.text.split(maxsplit=1)
+        amount = float(parts[0].replace(",", "."))
+        note = parts[1] if len(parts) > 1 else ""
         
+        data = await state.get_data()
+        db.add_transaction("income", data['category'], amount, note)
+        
+        note_display = f"\n📝 Примечание: <i>{note}</i>" if note else ""
         success_text = (
             f"🎉 <b>Доход зачислен!</b>\n"
             f"━━━━━━━━━━━━━━━━━━━\n"
-            f"➕ Сумма: <b>{amount:,.0f} ₽</b>"
+            f"📂 Категория: {data['category']}\n"
+            f"➕ Сумма: <b>{amount:,.0f} ₽</b>{note_display}"
         )
         await message.answer(success_text, reply_markup=get_main_menu(), parse_mode="HTML")
         await state.clear()
     except ValueError:
-        await message.answer("⚠️ Пожалуйста, введите число.", parse_mode="HTML")
+        await message.answer("⚠️ Пожалуйста, начните сообщение с числа (например: <code>50000 перевод</code>).", parse_mode="HTML")
 
 # --- РЕЗЕРВЫ ---
 @dp.callback_query(F.data.startswith("reserve_"))
@@ -266,7 +299,7 @@ async def process_pay_reserve(callback: CallbackQuery):
         
     await callback.message.edit_text(success_text, reply_markup=get_main_menu(), parse_mode="HTML")
 
-# --- ИСТОРИЯ И ОТМЕНА ---
+# --- ИСТОРИЯ И ОТМЕНА (С ОТОБРАЖЕНИЕМ КОММЕНТАРИЕВ) ---
 @dp.callback_query(F.data == "history_menu")
 async def show_history(callback: CallbackQuery):
     transactions = db.get_recent_transactions(5)
@@ -274,9 +307,11 @@ async def show_history(callback: CallbackQuery):
     if not transactions:
         text += "<i>Пока нет ни одной записи.</i>"
     else:
-        for t_type, cat, amt, date_time in transactions:
+        for t_type, cat, amt, date_time, note in transactions:
             sign = "➕" if t_type == "income" else "📉"
-            text += f"{sign} <b>{amt:,.0f} ₽</b> | {cat} <i>({date_time[5:16]})</i>\n"
+            # Если есть комментарий, добавляем его в скобках
+            note_str = f" <i>({note})</i>" if note else ""
+            text += f"{sign} <b>{amt:,.0f} ₽</b> | {cat}{note_str} \n<code style='color: gray;'>{date_time[5:16]}</code>\n\n"
             
     await callback.message.edit_text(text, reply_markup=get_history_menu(), parse_mode="HTML")
 
