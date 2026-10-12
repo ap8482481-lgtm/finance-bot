@@ -22,21 +22,23 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 db.init_db()
 
-# Категории расходов (расширены)
+# Расширенный список категорий расходов (без "Разное / Прочее")
 EXPENSE_CATEGORIES = {
     "cat_food": "🥗 Продукты питания",
     "cat_house": "🛒 Бытовые нужды",
     "cat_auto": "🚗 Автомобиль",
-    "cat_habits": "🚬 Вредные привычки",
+    "cat_gas": "⛽ Бензин",
     "cat_health": "💊 Гигиена и здоровье",
     "cat_kids": "🧸 Дети",
     "cat_clothes": "👕 Одежда и косметика",
     "cat_communal": "🏠 КУ и ЖКХ",
     "cat_transport": "🚌 Общественный транспорт",
+    "cat_comms": "📱 Связь",
     "cat_cafe": "☕ Кафе и рестораны",
+    "cat_fun": "🎉 Развлечения и подарки",
+    "cat_habits": "🚬 Вредные привычки",
     "cat_invest": "📈 Инвестиции",
-    "cat_deposit": "🐖 Вклад",
-    "cat_other": "📦 Разное / Прочее"
+    "cat_deposit": "🐖 Вклад"
 }
 
 class ExpenseState(StatesGroup): waiting_for_amount = State()
@@ -77,8 +79,8 @@ def get_expenses_menu():
     for code, name in EXPENSE_CATEGORIES.items():
         builder.button(text=name, callback_data=code)
     builder.button(text="◀️ Назад в меню", callback_data="back_to_main")
-    # У нас 13 категорий + 1 кнопка назад (итого 14 кнопок)
-    builder.adjust(2, 2, 2, 2, 2, 2, 1, 1)
+    # 15 категорий + 1 кнопка назад. 7 рядов по 2 кнопки, 1 кнопка по центру, и 1 кнопка "Назад"
+    builder.adjust(2, 2, 2, 2, 2, 2, 2, 1, 1)
     return builder.as_markup()
 
 def get_reserves_menu():
